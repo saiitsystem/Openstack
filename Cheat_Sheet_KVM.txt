@@ -1,0 +1,518 @@
+https://developers.redhat.com/blog/2016/08/18/setting-up-kvm-on-rhel/
+
+
+
+https://docs.openstack.org/install-guide/openstack-services.html
+
+Follow pike
+
+
+
+
+COMPUTE NODE/KVM
+=======================
+
+Stepss - 
+
+1. Download RHEL from the website
+2. Make bootable disk using refus or following this link on unix system - 
+https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/installation_guide/sect-making-usb-media
+
+3. Register RHEL
+you will want to register to the Red Hat network to receive updates and download software. This can be done by running the following command:
+subscription-manager register 
+subscription-manager auto-attach
+
+
+4. Install the latest updates
+
+$ su -
+# subscription-manager repos --list-enabled
+
+
+
+5 yum -y updates
+
+6.check if your physical system is Virtualisation Extensions enabled - 
+
+grep –E ‘svm|vmx’ /proc/cpuinfo
+
+make sure vmx present in the cpu flags - 
+flags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic popcnt aes lahf_lm tpr_shadow vnmi flexpriority ept vpid dtherm ida arat
+
+
+
+7. Install kvm packages - 
+yum install qemu-kvm qemu-img libvirt virt-install libvirt-client libvirt-python
+
+
+8.yum install wget
+
+9.Once the above has completed, we should check to ensure that the relevant KVM modules have been loaded to allow us to make full use of KVM. You can do this by running:
+
+
+10. Restart Services
+service libvirtd restart
+/etc/init.d/libvirt restart
+
+11. Install virt-viewer
+yum install virt-viewer
+
+
+12. yum install virt-manager
+
+Testings
+
+================
+Get the iso disc of OS
+ mkdir /home/iso && wget -O /home/iso/Fedora-Server-dvd-x86_64-27-1.6.iso https://www.mirrorservice.org/sites/dl.fedoraproject.org/pub/fedora/linux//releases/27/Server/x86_64/iso/Fedora-Server-dvd-x86_64-27-1.6.iso  
+
+ 
+
+
+ 
+Instgall
+
+virt-install --name fedora27 --ram 512 --file=/var/lib/libvirt/images/fedora.img --file-size=3 --vnc --cdrom=/home/iso/Fedora-Server-dvd-x86_64-27-1.6.iso 
+
+virt-install --name fedora27 --ram 2048 --file=/var/lib/libvirt/images/fedora.img --file-size=3 --vcpus 2 \
+       --cdrom /home/iso/Fedora-Server-dvd-x86_64-27-1.6.iso \
+       --virt-type kvm --os-variant rhel7  --vnc
+
+storage and other factors - 
+virt-install --name fedora27 --ram 2048 --disk size=3,format=qcow2 --vcpus 2 \
+       --cdrom /home/iso/Fedora-Server-dvd-x86_64-27-1.6.iso \
+       --virt-type kvm --os-variant rhel7 --graphics spic
+
+
+
+List
+ virsh list
+
+Delete VM
+
+# virsh snapshot-list --domain VM_NAME
+# virsh snapshot-list --domain openbsd
+
+
+The syntax is as follows to delete snapshot:
+# virsh snapshot-delete --domain VM_NAME --snapshotname SNAPSHOT_NAME
+
+
+virsh destroy _domain-id_
+virsh undefine _domain-id_
+
+
+
+
+
+
+GUI for KVM https://github.com/kimchi-project/kimchi/releases/tag/2.5.0
+
+
+
+
+
+
+
+Adding disk 
+cfdisk /dev/sda1
+
+format as linux 83 type, with bootable and maximimize
+
+format it as ext4:
+mkfs.ext4 /dev/sda1
+
+Mount the disk
+mkdir /mnt/R810_Disk
+mount /dev/sda1 /mnt/R810_Disk
+
+
+Add to /etc/fstab for reboot persistence:
+/dev/sda1   /mnt/R810_Disk   ext4    defaults    0 0
+
+
+
+
+
+
+
+
+
+
+
+
+firewall
+systemctl status firewalld
+service firewalld stop
+
+
+Disable
+systemctl stop firewalld
+systemctl disable firewalld 
+
+
+
+Virtual manager commands:
+===========================
+XLaunch on the desktop
+
+export DISPLAY=192.168.0.106:0
+
+virt-manager
+
+
+
+
+Network configuration of Controller and compute nodes
+Controller  -
+# nmtui
+
+IP address: 10.0.0.11
+Network mask: 255.255.255.0 (or /24)
+Default gateway: 10.0.0.1
+
+
+Compute
+# nmtui
+
+
+IP address: 10.0.0.31
+Network mask: 255.255.255.0 (or /24)
+Default gateway: 10.0.0.1
+
+
+
+Create the bridge  (This will enable internet in kvm)
+Create bridge
+brctl addbr br0
+brctl addif br0 p5p1
+dhclient br0
+
+To stop and delete
+# ip link set br0 down
+# brctl delbr br0
+
+
+
+Update etc/hosts
+# controller
+10.0.0.11       controller
+
+# compute1
+10.0.0.31       compute1
+
+
+
+
+
+NTP Sync
+============
+
+On controller:
+yum install chrony
+
+view /etc/chrony.conf
+server 0.rhel.pool.ntp.org iburst
+server 1.rhel.pool.ntp.org iburst
+server 2.rhel.pool.ntp.org iburst
+server 3.rhel.pool.ntp.org iburst
+
+
+136  yum install -y chrony
+  137  systemctl enable chronyd
+  138  systemctl start chronyd
+  139  chronyc tracking
+
+
+  Verify
+  
+  [root@opensftcntrl ~]# chronyc sources
+210 Number of sources = 4
+MS Name/IP address         Stratum Poll Reach LastRx Last sample
+===============================================================================
+^* 85.199.214.100                1   7   377   108   +858us[ +923us] +/- 5351us
+^+ 85.199.214.101                1   8   377    39   +541us[ +541us] +/- 5022us
+^- ntp2.owennelson.co.uk         2   8   377   108   -387us[ -387us] +/-   42ms
+^- y.ns.gin.ntt.net              2   8   377   237  +2874us[+2971us] +/-  101ms
+  
+  
+
+
+  
+  
+  
+  Enable open stack repository on both controller and compute
+  ==========
+  subscription-manager repos --enable=rhel-7-server-optional-rpms \
+  --enable=rhel-7-server-extras-rpms --enable=rhel-7-server-rh-common-rpms
+  
+  On RHEL, download and install the RDO repository RPM to enable the OpenStack repository.
+  
+  yum install https://rdoproject.org/repos/rdo-release.rpm
+  
+  
+  
+  yum upgrade
+  
+  Install the OpenStack client:
+  
+  # yum install python-openstackclient
+
+  
+  . Install the openstack-selinux package to automatically manage security policies for OpenStack services:
+  
+  # yum install openstack-selinux
+  
+  
+  
+  
+  
+  Ref:
+  https://docs.openstack.org/liberty/install-guide-ubuntu/environment-packages.html
+  https://docs.openstack.org/install-guide/environment-packages-rdo.html
+  
+ 
+############################################################################################################################################################### 
+
+   Controller1 - Install DB
+   ============================
+   https://docs.openstack.org/install-guide/environment-sql-database-rdo.html
+  
+  1.  Install the packages:
+
+# yum install mariadb mariadb-server python2-PyMySQL
+
+2. Create and edit the /etc/my.cnf.d/openstack.cnf file (backup existing configuration files in /etc/my.cnf.d/ if needed) and complete the following actions:
+
+Create a [mysqld] section, and set the bind-address key to the management IP address of the controller node to enable access by other nodes via the management network. Set additional keys to enable useful options and the UTF-8 character set:
+
+[mysqld]
+bind-address = 10.0.0.11
+
+default-storage-engine = innodb
+innodb_file_per_table = on
+max_connections = 4096
+collation-server = utf8_general_ci
+character-set-server = utf8
+
+
+Finalize installation¶
+---------------------------------
+1. Start the database service and configure it to start when the system boots:
+
+# systemctl enable mariadb.service
+# systemctl start mariadb.service
+
+2. Secure the database service by running the mysql_secure_installation script. In particular, choose a suitable password for the database root account:
+
+# mysql_secure_installation
+
+
+  
+
+
+
+Controller1 - Message queue for RHEL and CentOS
+=====================================
+
+Install and configure components¶
+------------------------------
+1. Install the package:
+# yum install rabbitmq-server
+
+
+Update etc/hosts
+127.0.0.1 opensftcntrl opensftcntrl.saiitsystems.co.uk localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1 opensftcntrl opensftcntrl.saiitsystems.co.uk localhost localhost.localdomain localhost4 localhost4.localdomain4
+10.0.0.31 opensftcntrl opensftcntrl.saiitsystems.co.uk compute1 rabbitmq
+
+
+
+
+
+2. Start the message queue service and configure it to start when the system boots:
+# systemctl enable rabbitmq-server.service
+# systemctl start rabbitmq-server.service
+
+NOTE: If there is error in bindings of host and port, reboot the vm and get this fixed.
+
+
+3. Add the openstack user:
+# rabbitmqctl add_user openstack RABBIT_PASS
+
+Creating user "openstack" ...
+
+
+4. Permit configuration, write, and read access for the openstack user:
+
+# rabbitmqctl set_permissions openstack ".*" ".*" ".*"
+
+Setting permissions for user "openstack" in vhost "/" ...
+
+
+
+
+
+
+ Controller - Identity service
+ =======================
+Memcached - For caching identity tokens
+
+The Identity service authentication mechanism for services uses Memcached to cache tokens. The memcached service typically runs on the controller node. For production deployments, we recommend enabling a combination of firewalling, authentication, and encryption to secure it.
+
+Install and configure components¶
+--------------------------------------
+1. Install the packages:
+# yum install memcached python-memcached
+
+2.Edit the /etc/sysconfig/memcached file and complete the following actions:
+
+Configure the service to use the management IP address of the controller node. This is to enable access by other nodes via the management network:
+
+OPTIONS="-l 127.0.0.1,::1,controller1"
+ Note
+
+Change the existing line OPTIONS="-l 127.0.0.1,::1".
+
+
+
+Finalize installation¶
+------------------------------
+Start the Memcached service and configure it to start when the system boots:
+
+# systemctl enable memcached.service
+# systemctl start memcached.service
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+exter
+TYPE="Ethernet"
+PROXY_METHOD="none"
+BROWSER_ONLY="no"
+BOOTPROTO="none"
+DEFROUTE="yes"
+IPV4_FAILURE_FATAL="no"
+IPV6INIT="no"
+IPV6_AUTOCONF="no"
+IPV6_DEFROUTE="no"
+IPV6_FAILURE_FATAL="no"
+IPV6_ADDR_GEN_MODE="stable-privacy"
+# Server IP #
+IPADDR=192.168.0.170
+# Subnet #
+PREFIX=24
+# Set default gateway IP #
+GATEWAY=192.168.1.1
+NAME="p5p1"
+UUID="86606f6f-2708-403f-8e4a-71e786fefaaa"
+DEVICE="p5p1"
+ONBOOT="yes"
+
+
+systemctl restart network 
+
+
+
+
+##########################################################################################################################
+
+
+
+On Controller Node: Identity service
+Keystone Installation Tutorial for Red Hat Enterprise Linux and CentOS
+
+Ref: https://docs.openstack.org/keystone/pike/install/index-rdo.html
+
+Prerequisites¶
+Before you install and configure the Identity service, you must create a database.
+
+1. Use the database access client to connect to the database server as the root user:
+
+$ mysql -u root -p
+
+
+2. Create the keystone database:
+
+MariaDB [(none)]> CREATE DATABASE keystone;
+
+3. <DO NOT RUN - This is document, see below commands> 
+
+Grant proper access to the keystone database:
+
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost' \
+IDENTIFIED BY 'KEYSTONE_DBPASS';
+
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' \
+IDENTIFIED BY 'KEYSTONE_DBPASS';
+
+Replace KEYSTONE_DBPASS with a suitable password.
+
+
+COMMANDS:  <See Password excel sheet for details>
+GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost' \
+IDENTIFIED BY 'XXXXXXXXX';
+
+GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' \
+IDENTIFIED BY 'XXXXXXXXXXX';
+
+
+
+
+
+4. Exit the database access client.
+
+MariaDB [(none)]> exit
+
+Install and configure components¶
+=========================
+1. Run the following command to install the packages:
+
+# yum install openstack-keystone httpd mod_wsgi
+
+2. Edit the /etc/keystone/keystone.conf file and complete the following actions:
+
+ --> In the [database] section, configure database access:
+[database]
+# ...
+connection = mysql+pymysql://keystone:KEYSTONE_DBPASS@controller/keystone
+Replace KEYSTONE_DBPASS with the password you chose for the database.
+
+ Note:
+Comment out or remove any other connection options in the [database] section.
+
+ ---> In the [token] section, configure the Fernet token provider:
+[token]
+# ...
+provider = fernet
+
+3. Populate the Identity service database: <This takes some time.. so be patience>
+
+# su -s /bin/sh -c "keystone-manage db_sync" keystone
+
+4. Initialize Fernet key repositories:
+
+# keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+# keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+
+5. Bootstrap the Identity service:
+
+# keystone-manage bootstrap --bootstrap-password ADMIN_PASS \
+  --bootstrap-admin-url http://controller:35357/v3/ \
+  --bootstrap-internal-url http://controller:5000/v3/ \
+  --bootstrap-public-url http://controller:5000/v3/ \
+  --bootstrap-region-id RegionOne
+Replace ADMIN_PASS with a suitable password for an administrative user.
+
