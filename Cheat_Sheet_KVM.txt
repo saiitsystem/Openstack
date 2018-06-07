@@ -1,6 +1,6 @@
 https://developers.redhat.com/blog/2016/08/18/setting-up-kvm-on-rhel/
 
-
+https://docs.openstack.org/install-guide/  - OVERALL INSTALL GUIDE
 
 https://docs.openstack.org/install-guide/openstack-services.html
 
@@ -197,10 +197,10 @@ To stop and delete
 
 Update etc/hosts
 # controller
-10.0.0.11       controller
+10.0.0.11       controller controller1
 
 # compute1
-10.0.0.31       compute1
+10.0.0.31       compute compute1
 
 
 
@@ -396,8 +396,9 @@ Start the Memcached service and configure it to start when the system boots:
 
 
 
+
   
-exter
+enter
 TYPE="Ethernet"
 PROXY_METHOD="none"
 BROWSER_ONLY="no"
@@ -422,6 +423,47 @@ ONBOOT="yes"
 
 
 systemctl restart network 
+
+
+
+
+Controller - Etcd
+==================
+
+OpenStack services may use Etcd, a distributed reliable key-value store for distributed key locking, storing configuration, keeping track of service live-ness and other scenarios.
+
+Install and configure components
+--------------------------------
+1. Install the package:
+
+# yum install etcd
+
+2. Edit the /etc/etcd/etcd.conf file and set the ETCD_INITIAL_CLUSTER, ETCD_INITIAL_ADVERTISE_PEER_URLS, ETCD_ADVERTISE_CLIENT_URLS, ETCD_LISTEN_CLIENT_URLS to the management IP address of the controller node to enable access by other nodes via the management network:
+
+#[Member]
+ETCD_DATA_DIR="/var/lib/etcd/default.etcd"
+ETCD_LISTEN_PEER_URLS="http://10.0.0.11:2380"
+ETCD_LISTEN_CLIENT_URLS="http://10.0.0.11:2379"
+ETCD_NAME="controller"
+#[Clustering]
+ETCD_INITIAL_ADVERTISE_PEER_URLS="http://10.0.0.11:2380"
+ETCD_ADVERTISE_CLIENT_URLS="http://10.0.0.11:2379"
+ETCD_INITIAL_CLUSTER="controller=http://10.0.0.11:2380"
+ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster-01"
+ETCD_INITIAL_CLUSTER_STATE="new"
+
+
+Finalize installation¶
+--------------------------------
+1. Enable and start the etcd service:
+
+# systemctl enable etcd
+# systemctl start etcd
+
+
+
+
+
 
 
 
@@ -508,6 +550,7 @@ provider = fernet
 
 
 5. Bootstrap the Identity service:
+<DO NOT RUN - This is document, see below commands> 
 
 # keystone-manage bootstrap --bootstrap-password ADMIN_PASS \
   --bootstrap-admin-url http://controller:35357/v3/ \
@@ -515,4 +558,281 @@ provider = fernet
   --bootstrap-public-url http://controller:5000/v3/ \
   --bootstrap-region-id RegionOne
 Replace ADMIN_PASS with a suitable password for an administrative user.
+
+COMMANDS:  <This takes some time.. so be patience>
+keystone-manage bootstrap --bootstrap-password XXXXXXXX \
+  --bootstrap-admin-url http://controller:35357/v3/ \
+  --bootstrap-internal-url http://controller:5000/v3/ \
+  --bootstrap-public-url http://controller:5000/v3/ \
+  --bootstrap-region-id RegionOne
+  
+  
+  
+  
+  
+  Configure the Apache HTTP server¶
+  ==============================================
+1. Edit the /etc/httpd/conf/httpd.conf file and configure the ServerName option to reference the controller node:
+
+ServerName controller
+
+
+2. Create a link to the /usr/share/keystone/wsgi-keystone.conf file:
+
+# ln -s /usr/share/keystone/wsgi-keystone.conf /etc/httpd/conf.d/
+
+
+Finalize the installation¶
+=============================
+
+1. Start the Apache HTTP service and configure it to start when the system boots:
+
+# systemctl enable httpd.service
+# systemctl start httpd.service
+
+2. Configure the administrative account  
+
+# export OS_USERNAME=admin
+# export OS_PASSWORD=adminroot123
+# export OS_PROJECT_NAME=admin
+# export OS_USER_DOMAIN_NAME=Default
+# export OS_PROJECT_DOMAIN_NAME=Default
+# export OS_AUTH_URL=http://controller:35357/v3
+#export OS_IDENTITY_API_VERSION=3
+Replace ADMIN_PASS with the password used in the keystone-manage bootstrap command in keystone-install-configure-rdo.
+
+Do not see: Extra: May be for client env.
+https://docs.openstack.org/mitaka/install-guide-obs/keystone-openrc.html
+
+
+Create a domain, projects, users, and roles
+=======================================
+1. This guide uses a service project that contains a unique user for each service that you add to your environment. Create the service project:
+
+[root@opensftcntrl ~]# openstack project create --domain default \
+>   --description "Service Project" service
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | Service Project                  |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | fba486c2b83342acade585f9449872cd |
+| is_domain   | False                            |
+| name        | service                          |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+[root@opensftcntrl ~]#
+
+2. Regular (non-admin) tasks should use an unprivileged project and user. As an example, this guide creates the demo project and user.
+
+ a) Create the demo project:
+
+[root@opensftcntrl ~]# openstack project create --domain default \
+>   --description "Demo Project" demo
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | Demo Project                     |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | 4dab68938c444f83b50844edb02a6f01 |
+| is_domain   | False                            |
+| name        | demo                             |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+[root@opensftcntrl ~]#
+
+
+  b) Create the demo user:
+
+[root@opensftcntrl ~]# openstack user create --domain default \
+>   --password-prompt demo
+User Password:
+Repeat User Password:
++---------------------+----------------------------------+
+| Field               | Value                            |
++---------------------+----------------------------------+
+| domain_id           | default                          |
+| enabled             | True                             |
+| id                  | 784412a7c5554bafa0fcd6da3629f37c |
+| name                | demo                             |
+| options             | {}                               |
+| password_expires_at | None                             |
++---------------------+----------------------------------+
+[root@opensftcntrl ~]#
+
+
+
+
+ b) Create the user role:
+
+[root@opensftcntrl ~]# openstack role create user
++-----------+----------------------------------+
+| Field     | Value                            |
++-----------+----------------------------------+
+| domain_id | None                             |
+| id        | 651aeb49a0024018b1565565ebc1733f |
+| name      | user                             |
++-----------+----------------------------------+
+[root@opensftcntrl ~]#
+
+ c) Add the user role to the demo project and user:
+
+[root@opensftcntrl ~]# openstack role add --project demo --user demo user
+ Note:
+This command provides no output.
+
+
+Verify operation
+===========================
+
+1. Unset the temporary OS_AUTH_URL and OS_PASSWORD environment variable:
+
+$ unset OS_AUTH_URL OS_PASSWORD
+
+2. As the admin user, request an authentication token:
+
+
+[root@opensftcntrl ~]# openstack --os-auth-url http://controller:35357/v3 \
+>   --os-project-domain-name Default --os-user-domain-name Default \
+>   --os-project-name admin --os-username admin token issue
+Password:
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Field      | Value                                                                                                                                                                                   |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| expires    | 2018-06-07T22:53:49+0000                                                                                                                                                                |
+| id         | gAAAAABbGalt00ssbddXxf9ZuXYSPOlxPnsaxuey9QRBLzAjQwS58FA6o-BZbmcnv-nGgIk-a4YD7CLcZJKPKO3F6tteIFUKXbOuvVIDTX9OIj5GOK_MrHyYnjTVAjCPJCPseNKKtuk5LF6RefmInvcpTjJP_IDESymeHHFcQYt4RMzA-0qGBCo |
+| project_id | d9005bd3c7e94efea84272910c7ab078                                                                                                                                                        |
+| user_id    | 588aedf0e4844d3480dcc46ae847dac1                                                                                                                                                        |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+[root@opensftcntrl ~]#
+
+ Note:
+This command uses the password for the admin user.
+
+3. As the demo user, request an authentication token:
+ 
+ 
+[root@opensftcntrl ~]# openstack --os-auth-url http://controller:5000/v3 \
+>   --os-project-domain-name Default --os-user-domain-name Default \
+>   --os-project-name demo --os-username demo token issue
+Password:
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Field      | Value                                                                                                                                                                                   |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| expires    | 2018-06-07T22:56:19+0000                                                                                                                                                                |
+| id         | gAAAAABbGaoDCZB0xJhn3-TP57R05YhjjhCjFiyl9chIIs8lqzRAAqk6-81R-JHANS_falZyNfs8NiiK3WfjXcR83VJmwOeExy5jT0ROKBo0hsshKtevywyJyjCaayfU-RTlBR6_MKO_31F8SfvHmDPwXV8d6AU0cXjBI2Fm8HO3-E9XuRcRpg4 |
+| project_id | 4dab68938c444f83b50844edb02a6f01                                                                                                                                                        |
+| user_id    | 784412a7c5554bafa0fcd6da3629f37c                                                                                                                                                        |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+[root@opensftcntrl ~]#
+
+ Note:
+This command uses the password for the demo user and API port 5000 which only allows regular (non-admin) access to the Identity service API.
+
+
+
+Create OpenStack client environment scripts
+=================================================
+=================================================
+
+Creating the scripts¶
+=========================
+Create client environment scripts for the admin and demo projects and users. Future portions of this guide reference these scripts to load appropriate credentials for client operations.
+
+ Note:
+The paths of the client environment scripts are unrestricted. For convenience, you can place the scripts in any location, however ensure that they are accessible and located in a secure place appropriate for your deployment, as they do contain sensitive credentials.
+
+1. Create and edit the admin-openrc file and add the following content:
+
+ Note:
+The OpenStack client also supports using a clouds.yaml file. For more information, see the os-client-config [https://docs.openstack.org/os-client-config/latest/].
+
+
+ ~~~~~~~~~~~~~~~~~~~~~~
+created groups and user to test it
+groupadd openstackgrp
+useradd -m arun -p XXXXXXXXXX
+usermod -a -G openstackgrp arun
+~~~~~~~~~~~~~~~~~
+
+cd ~arun
+
+vi admin-openrc
+________________________
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=XXXXXXXX
+export OS_AUTH_URL=http://controller:35357/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+__________________________________
+Note:
+Replace ADMIN_PASS with the password you chose for the admin user in the Identity service.
+
+2. Create and edit the demo-openrc file and add the following content:
+
+vi demo-openrc
+
+_____________________________________________
+
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_NAME=demo
+export OS_USERNAME=demo
+export OS_PASSWORD=XXXXXXXX
+export OS_AUTH_URL=http://controller:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+
+_____________________________________________________
+Note:
+Replace DEMO_PASS with the password you chose for the demo user in the Identity service.
+
+
+Using the scripts
+=========================
+
+To run clients as a specific project and user, you can simply load the associated client environment script prior to running them. For example:
+
+1. Load the admin-openrc file to populate environment variables with the location of the Identity service and the admin project and user credentials:
+
+[arun@opensftcntrl ~]$ . admin-openrc
+[arun@opensftcntrl ~]$ openstack token issue
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Field      | Value                                                                                                                                                                                   |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| expires    | 2018-06-07T23:17:00+0000                                                                                                                                                                |
+| id         | gAAAAABbGa7cNcVez6KCIiacqJV7Ut5xmmLg4qEkDdlz5zNrausAZzRf04vC2EGtEF4MUUCgjIz_nYOLtEGgYY7SwAPeyVFkgA3Haa6ZLz-jaTYVes7S-V5j5Kb_sUqGLqLksaoVmymringrxQyl7SqlBZTALdoQWXbv4dc7HILfZLtyppfMLeE |
+| project_id | d9005bd3c7e94efea84272910c7ab078                                                                                                                                                        |
+| user_id    | 588aedf0e4844d3480dcc46ae847dac1                                                                                                                                                        |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+[arun@opensftcntrl ~]$
+
+
+2. Load the demo-openrc file to populate environment variables with the location of the Identity service and the admin project and user credentials:
+[arun@opensftcntrl ~]$ . demo-openrc
+[arun@opensftcntrl ~]$ openstack token issue
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Field      | Value                                                                                                                                                                                   |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| expires    | 2018-06-07T23:18:12+0000                                                                                                                                                                |
+| id         | gAAAAABbGa8k8B4T0jS1JAttq-JwOOWn2MikHuz1FBD1zfXXo-MjuEFFETApUOfd12LS_comktvjURCAO-GKmSEOdoRrCMuEyXOvZnsC4KUWU16rfK3sbngvj2zyv2cSWdLHCbKK0wHtAaFlSav9V4t45_Lfq0jshQJxH6Kz6N8LK5Nd0hoUnWQ |
+| project_id | 4dab68938c444f83b50844edb02a6f01                                                                                                                                                        |
+| user_id    | 784412a7c5554bafa0fcd6da3629f37c                                                                                                                                                        |
++------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+[arun@opensftcntrl ~]$
+
+
+###NOTE####
+Controller - Etcd  step created at this stage as it was missed before.
+
+
+##################################################################################################################
+
 
